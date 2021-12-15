@@ -273,6 +273,7 @@ struct segment_command {
  * 一个segment由零个或多个sections组成。 
  * 非 MH_OBJECT 文件的所有segment都有适当的sections，并在链接编辑器生成时填充到指定的segment对齐方式。
  * MH_EXECUTE 和 MH_FVMLIB 格式文件的第一个segment包括mach_header以及在第一section之前的加载命令。
+ * 这种设计让使用零作为填充值片段能够在 zero fill 节的位置处令整个片段在内存中对齐
  * 补零section始终位于其段中的最后（在所有格式中）。 这允许将补零的段填充到补零的section里
  *
  * The MH_OBJECT format has all of it's sections in one segment for
@@ -340,30 +341,61 @@ struct section {
  * entries in the section.  For symbol pointers sections the size of the entries
  * in the section is 4 bytes and for symbol stubs sections the byte size of the
  * stubs is stored in the reserved2 field of the section structure.
+ * 对于两种类型的符号指针部分和符号存根部分，它们具有间接符号表条目。
+ * 对于section中的每个条目，间接符号表条目按照间接符号表中的相应顺序，
+ * 从存储在段结构的 reserved1 字段中的索引开始。 
+ * 由于间接符号表条目对应于section中的条目，间接符号表条目的数量由段的大小除以section中的条目的大小来推断。 
+ * 对于符号指针section，section中条目的大小为 4 个字节，对于符号存根section，存根的字节大小存储在节结构的 reserved2 字段中。
  */
-#define	S_NON_LAZY_SYMBOL_POINTERS	0x6	/* section with only non-lazy
-						   symbol pointers */
-#define	S_LAZY_SYMBOL_POINTERS		0x7	/* section with only lazy symbol
-						   pointers */
-#define	S_SYMBOL_STUBS			0x8	/* section with only symbol
-						   stubs, byte size of stub in
-						   the reserved2 field */
-#define	S_MOD_INIT_FUNC_POINTERS	0x9	/* section with only function
-						   pointers for initialization*/
+/* 
+ * section with only non-lazy symbol pointers
+ * 只有非懒加载符号指针的部分
+ */
+#define	S_NON_LAZY_SYMBOL_POINTERS	0x6	
+/* 
+ * section with only lazy symbol
+ * pointers 
+ * 只有懒加载符号指针的部分
+ */
+#define	S_LAZY_SYMBOL_POINTERS		0x7	
+/* 
+ * section with only symbol
+ * stubs, byte size of stub in
+ * the reserved2 field 
+ * 仅包含符号存根的部分，reserved2 字段中存根的字节大小
+ */
+#define	S_SYMBOL_STUBS			0x8	
+/*
+ * section with only function
+ * pointers for initialization
+ * 仅包含用于初始化的函数指针的部分
+ */
+#define	S_MOD_INIT_FUNC_POINTERS	0x9
 /*
  * Constants for the section attributes part of the flags field of a section
  * structure.
+ * section 结构标志字段的节属性部分的常量。
  */
-#define SECTION_ATTRIBUTES_USR	 0xff000000	/* User setable attributes */
-#define S_ATTR_PURE_INSTRUCTIONS 0x80000000	/* section contains only true
-						   machine instructions */
-#define SECTION_ATTRIBUTES_SYS	 0x00ffff00	/* system setable attributes */
+#define SECTION_ATTRIBUTES_USR	 0xff000000	/* User setable attributes  用户可设置的属性*/
+/* 
+ * section contains only true
+ * machine instructions
+ * 仅包含真正机器指令的section
+ */
+#define S_ATTR_PURE_INSTRUCTIONS 0x80000000	
+#define SECTION_ATTRIBUTES_SYS	 0x00ffff00	/* system setable attributes  系统可设置属性*/
 #define S_ATTR_SOME_INSTRUCTIONS 0x00000400	/* section contains some
 						   machine instructions */
-#define S_ATTR_EXT_RELOC	 0x00000200	/* section has external
-						   relocation entries */
-#define S_ATTR_LOC_RELOC	 0x00000100	/* section has local
-						   relocation entries */
+/**
+ * section has external relocation entries
+ * 包含一些机器指令
+ */
+#define S_ATTR_EXT_RELOC	 0x00000200
+/**
+ * section has local relocation entries 
+ * 含有本地重定向元素
+ */
+#define S_ATTR_LOC_RELOC	 0x00000100
 
 
 /*
@@ -371,38 +403,47 @@ struct section {
  * link-editor.  But there are few things to support traditional UNIX
  * executables that require the link-editor and assembler to use some names
  * agreed upon by convention.
+ * 其中段和节的名称对于链接编辑器来说大多是没有意义的。
+ * 但是还是有部分东西支持需要链接编辑器和汇编器使用一些约定俗成的名称的传统 UNIX 可执行文件。
  *
  * The initial protection of the "__TEXT" segment has write protection turned
  * off (not writeable).
+ * "__TEXT" 段的初始保护已关闭写保护（不可写）。
  *
  * The link-editor will allocate common symbols at the end of the "__common"
  * section in the "__DATA" segment.  It will create the section and segment
  * if needed.
+ * 链接编辑器将在“__DATA”段中“__common”部分的末尾分配公共符号。 如果需要，它将创建部分和段。
  */
 
 /* The currently known segment names and the section names in those segments */
 
+/**
+ * the pagezero segment which has no protections and 
+ * catches NULL references for MH_EXECUTE files
+ * pagezero 段没有保护并捕获 MH_EXECUTE 文件的 NULL 引用
+ */
 #define	SEG_PAGEZERO	"__PAGEZERO"	/* the pagezero segment which has no */
 					/* protections and catches NULL */
 					/* references for MH_EXECUTE files */
 
 
-#define	SEG_TEXT	"__TEXT"	/* the tradition UNIX text segment */
-#define	SECT_TEXT	"__text"	/* the real text part of the text */
+#define	SEG_TEXT	"__TEXT"	/* the tradition UNIX text segment 传统的 UNIX 文本段*/
+#define	SECT_TEXT	"__text"	/* the real text part of the text 文本的真实文本部分*/
 					/* section no headers, and no padding */
-#define SECT_FVMLIB_INIT0 "__fvmlib_init0"	/* the fvmlib initialization */
+#define SECT_FVMLIB_INIT0 "__fvmlib_init0"	/* the fvmlib initialization fvmlib 初始化*/
 						/*  section */
 #define SECT_FVMLIB_INIT1 "__fvmlib_init1"	/* the section following the */
 					        /*  fvmlib initialization */
 						/*  section */
 
-#define	SEG_DATA	"__DATA"	/* the tradition UNIX data segment */
-#define	SECT_DATA	"__data"	/* the real initialized data section */
-					/* no padding, no bss overlap */
-#define	SECT_BSS	"__bss"		/* the real uninitialized data section*/
+#define	SEG_DATA	"__DATA"	/* the tradition UNIX data segment 传统的 UNIX 数据段*/
+#define	SECT_DATA	"__data"	/* the real initialized data section 真正的初始化数据部分*/
+					/* no padding, no bss overlap 无 bss 重叠*/
+#define	SECT_BSS	"__bss"		/* the real uninitialized data section 真正的未初始化数据部分*/
 					/* no padding */
 #define SECT_COMMON	"__common"	/* the section common symbols are */
-					/* allocated in by the link editor */
+					/* allocated in by the link editor  公共符号由链接编辑器分配*/
 
 #define	SEG_OBJC	"__OBJC"	/* objective-C runtime segment */
 #define SECT_OBJC_SYMBOLS "__symbol_table"	/* symbol table */
@@ -414,19 +455,30 @@ struct section {
 #define	SECT_ICON_HEADER "__header"	/* the icon headers */
 #define	SECT_ICON_TIFF   "__tiff"	/* the icons in tiff format */
 
+/**
+ * the segment containing all structs
+ * created and maintained by the link
+ * editor.  Created with -seglinkedit
+ * option to ld(1) for MH_EXECUTE and
+ * FVMLIB file types only
+ * 包含链接编辑器创建和维护的所有结构的段。 
+ * 使用 -seglinkedit 选项创建 ld(1) 仅适用于 MH_EXECUTE 和 FVMLIB 文件类型
+ */
 #define	SEG_LINKEDIT	"__LINKEDIT"	/* the segment containing all structs */
 					/* created and maintained by the link */
 					/* editor.  Created with -seglinkedit */
 					/* option to ld(1) for MH_EXECUTE and */
 					/* FVMLIB file types only */
 
-#define SEG_UNIXSTACK	"__UNIXSTACK"	/* the unix stack segment */
+#define SEG_UNIXSTACK	"__UNIXSTACK"	/* the unix stack segment unix 堆栈段 */
 
 /*
  * Fixed virtual memory shared libraries are identified by two things.  The
  * target pathname (the name of the library as found for execution), and the
  * minor version number.  The address of where the headers are loaded is in
  * header_addr.
+ * 固定虚拟内存共享库由两件事标识。 目标路径名（为执行找到的库的名称）和次要版本号。
+ * 加载头文件的地址在 header_addr 中。
  */
 struct fvmlib {
 	union lc_str	name;		/* library's target pathname */
@@ -439,6 +491,9 @@ struct fvmlib {
  * contains a fvmlib_command (cmd == LC_IDFVMLIB) to identify the library.
  * An object that uses a fixed virtual shared library also contains a
  * fvmlib_command (cmd == LC_LOADFVMLIB) for each library it uses.
+ * 一个固定的虚拟共享库（文件类型 == MH_FVMLIB in the mach header）
+ * 包含一个 fvmlib_command (cmd == LC_IDFVMLIB) 来识别库。
+ * 使用固定虚拟共享库的对象还包含它使用的每个库的 fvmlib_command (cmd == LC_LOADFVMLIB)。
  */
 struct fvmlib_command {
 	unsigned long	cmd;		/* LC_IDFVMLIB or LC_LOADFVMLIB */
@@ -454,6 +509,10 @@ struct fvmlib_command {
  * library being used.  The time stamp is used to record the time a library was
  * built and copied into user so it can be use to determined if the library used
  * at runtime is exactly the same as used to built the program.
+ * 动态链接的共享库由两件事标识。
+ * 路径名（为执行找到的库的名称）和兼容性版本号。 
+ * 路径名必须匹配，并且库用户中的兼容性编号必须大于或等于正在使用的库。
+ * 时间戳用于记录构建库并将其复制到用户的时间，因此可用于确定运行时使用的库是否与构建程序时使用的库完全相同。
  */
 struct dylib {
     union lc_str  name;			/* library's path name */
@@ -467,6 +526,9 @@ struct dylib {
  * contains a dylib_command (cmd == LC_ID_DYLIB) to identify the library.
  * An object that uses a dynamicly linked shared library also contains a
  * dylib_command (cmd == LC_LOAD_DYLIB) for each library it uses.
+ * 动态链接的共享库（在mach header里文件类型 == MH_DYLIB ）
+ * 包含一个 dylib_command (cmd == LC_ID_DYLIB) 来标识库。
+ * 使用动态链接共享库的对象还包含它使用的每个库的 dylib_command (cmd == LC_LOAD_DYLIB)。
  */
 struct dylib_command {
 	unsigned long	cmd;		/* LC_ID_DYLIB or LC_LOAD_DYLIB */
@@ -482,6 +544,12 @@ struct dylib_command {
  * which are not (0) from the library.  The bit for module 0 is the low bit
  * of the first byte.  So the bit for the Nth module is:
  * (linked_modules[N/8] >> N%8) & 1
+ * 
+ * 静态链接器在预绑定中使用的每个库都有一个
+ * 预先绑定到其动态库的程序（文件类型== MH_EXECUTE）或包（文件类型== MH_BUNDLE）
+ * 它包含库中模块的位向量。 
+ * 这些位指示哪些模块是从库中绑定 (1) 哪些不是 (0)。 
+ * 模块 0 的位是第一个字节的低位。 所以第 N 个模块的位是： (linked_modules[N/8] >> N%8) & 1
  */
 struct prebound_dylib_command {
 	unsigned long	cmd;		/* LC_PREBOUND_DYLIB */
@@ -496,6 +564,9 @@ struct prebound_dylib_command {
  * the name of the dynamic linker (LC_LOAD_DYLINKER).  And a dynamic linker
  * contains a dylinker_command to identify the dynamic linker (LC_ID_DYLINKER).
  * A file can have at most one of these.
+ * 使用动态链接器的程序包含一个 dylinker_command 来标识动态链接器的名称 (LC_LOAD_DYLINKER)。
+ * 并且动态链接器包含一个 dylinker_command 来标识动态链接器 (LC_ID_DYLINKER)。 
+ * 一个文件最多可以包含其中之一。
  */
 struct dylinker_command {
 	unsigned long	cmd;		/* LC_ID_DYLINKER or LC_LOAD_DYLINKER */
@@ -537,6 +608,7 @@ struct thread_command {
  * The symtab_command contains the offsets and sizes of the link-edit 4.3BSD
  * "stab" style symbol table information as described in the header files
  * <nlist.h> and <stab.h>.
+ * symtab_command 包含链接编辑 4.3BSD "stab" 样式符号表信息的偏移量和大小，如头文件 <nlist.h> 和 <stab.h> 中所述。
  */
 struct symtab_command {
 	unsigned long	cmd;		/* LC_SYMTAB */
@@ -550,6 +622,7 @@ struct symtab_command {
 /*
  * This is the second set of the symbolic information which is used to support
  * the data structures for the dynamicly link editor.
+ * 这是用于支持动态链接编辑器数据结构的第二组符号信息。
  *
  * The original set of symbolic information in the symtab_command which contains
  * the symbol and string tables must also be present when this load command is
@@ -560,7 +633,13 @@ struct symtab_command {
  *	undefined external symbols (sorted by name)
  * In this load command there are offsets and counts to each of the three groups
  * of symbols.
- *
+ * 当此加载命令存在时，包含符号和字符串表的 symtab_command 中的原始符号信息集也必须存在。 
+ * 当这个加载命令出现时，符号表被组织成三组符号：
+ * 本地符号（静态和调试符号）——按模块分组
+ * 定义的外部符号 - 按模块分组（如果不是 lib，则按名称排序）
+ * 未定义的外部符号（按名称排序）
+ * 在此加载命令中，三组符号中的每一组都有偏移量和计数。
+ * 
  * This load command contains a the offsets and sizes of the following new
  * symbolic information tables:
  *	table of contents
@@ -576,7 +655,17 @@ struct symtab_command {
  *	module table - the file contains only one module so everything in the
  *		       file is part of the module.
  *	reference symbol table - is the defined and undefined external symbols
- *
+ * 此加载命令包含以下新符号信息表的偏移量和大小：
+ *	table of contents
+ *	module table
+ *	reference symbol table
+ *	indirect symbol table
+ * 上面的前三个表（目录表、模块表和引用符号表）仅在文件是动态链接共享库时才存在。 
+ * 对于可执行和目标模块，它们是只包含一个模块的文件，这三个表中的定义如下：
+ *  table of contents - 定义按名称排序的外部符号
+ *  module table - 该文件仅包含一个模块，因此文件中的所有内容都是该模块的一部分。
+ *  reference symbol table - 是已定义和未定义的外部符号
+ * 
  * For dynamicly linked shared library files this load command also contains
  * offsets and sizes to the pool of relocation entries for all sections
  * separated into two groups:
@@ -584,6 +673,10 @@ struct symtab_command {
  *	local relocation entries
  * For executable and object modules the relocation entries continue to hang
  * off the section structures.
+ * 对于动态链接的共享库文件，此加载命令还包含对分成两组的所有部分的重定位条目池的偏移量和大小：
+ * external relocation entries 外部重定向元素
+ * local relocation entries 本地重定向元素
+ * 对于可执行和目标模块，重定位条目在section结构之外。
  */
 struct dysymtab_command {
     unsigned long cmd;		/* LC_DYSYMTAB */
@@ -596,13 +689,19 @@ struct dysymtab_command {
      *    defined external symbols (further grouped by the module they are from)
      *    undefined symbols
      *
+     * LC_SYMTAB 加载命令的symoff 和nsyms 表示的符号分为以下三组：
+     *    local symbols（按它们来自的模块进一步分组）
+     *    defined external symbols（按它们来自的模块进一步分组）
+     *    undefined symbols 未定义的符号
      * The local symbols are used only for debugging.  The dynamic binding
      * process may have to use them to indicate to the debugger the local
      * symbols for a module that is being bound.
+     * 局部符号仅用于调试。 动态绑定过程可能必须使用它们来向调试器指示正在绑定的模块的本地符号。
      *
      * The last two groups are used by the dynamic binding process to do the
      * binding (indirectly through the module table and the reference symbol
      * table when this is a dynamicly linked shared library file).
+     * 最后两组是动态绑定过程使用的绑定（当这是动态链接的共享库文件时，间接通过模块表和引用符号表）。
      */
     unsigned long ilocalsym;	/* index to local symbols */
     unsigned long nlocalsym;	/* number of local symbols */
@@ -620,6 +719,9 @@ struct dysymtab_command {
      * they are defined in.  This exists only in a dynamicly linked shared
      * library file.  For executable and object modules the defined external
      * symbols are sorted by name and is use as the table of contents.
+     * 对于动态绑定过程以查找在目录中定义了符号的模块（类似于存档中的ranlib 结构），
+     * 它将定义的外部符号映射到定义它们的模块。这仅存在于 动态链接的共享库文件。 
+     * 对于可执行和目标模块，定义的外部符号按名称排序并用作table of contents.
      */
     unsigned long tocoff;	/* file offset to table of contents */
     unsigned long ntoc;		/* number of entries in table of contents */
@@ -632,6 +734,10 @@ struct dysymtab_command {
      * refer to is described below.  This exists only in a dynamicly linked
      * shared library file.  For executable and object modules the file only
      * contains one module so everything in the file belongs to the module.
+     * 为了支持“模块”（整个目标文件）的动态绑定，符号表必须反映创建文件的模块。
+     * 这是通过拥有一个模块表来完成的，该表具有索引并计数到每个模块的合并表中。
+     * 这两个条目所指的模块结构如下所述。 这仅存在于动态链接的共享库文件中。
+     * 对于可执行和目标模块，文件只包含一个模块，因此文件中的所有内容都属于该模块。
      */
     unsigned long modtaboff;	/* file offset to module table */
     unsigned long nmodtab;	/* number of module table entries */
@@ -644,6 +750,9 @@ struct dysymtab_command {
      * This exists only in a dynamicly linked shared library file.  For
      * executable and object modules the defined external symbols and the
      * undefined external symbols indicates the external references.
+     * 为了支持动态模块绑定，每个模块的模块结构指示每个模块所做的外部引用（已定义和未定义）。 
+     * 对于每个模块，模块引用的符号在引用符号表中都有一个偏移量和一个计数。
+     * 这仅存在于动态链接的共享库文件中。 对于可执行和目标模块，定义的外部符号和未定义的外部符号表示外部引用。
      */
     unsigned long extrefsymoff;  /* offset to referenced symbol table */
     unsigned long nextrefsyms;	 /* number of referenced symbol table entries */
@@ -657,6 +766,10 @@ struct dysymtab_command {
      * reserved1.  An indirect symbol table entry is simply a 32bit index into
      * the symbol table to the symbol that the pointer or stub is referring to.
      * The indirect symbol table is ordered to match the entries in the section.
+     * 包含“symbol pointers”和“routine stubs”的部分
+     * 在每个指针和存根的“间接符号”表中都有索引和（基于节的大小和条目的固定大小的隐含计数）。
+     * 对于这两种类型的每个section，间接符号表的索引都存储在段头中的字段 reserved1 中。 
+     * 间接符号表条目只是指向指针或存根所指符号的符号表中的 32 位索引。 间接符号表被排序以匹配节中的条目。
      */
     unsigned long indirectsymoff; /* file offset to the indirect symbol table */
     unsigned long nindirectsyms;  /* number of indirect symbol table entries */
